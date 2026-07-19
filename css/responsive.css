@@ -1,0 +1,51 @@
+/* ==========================================================================
+   Build Yourself — Responsive
+   Mobile-first base is defined in style.css/components.css.
+   These rules scale up for larger phones, tablets, and desktop.
+   ========================================================================== */
+
+/* Small phones */
+@media (max-width: 360px) {
+  :root { --fs-base: 0.875rem; }
+  .stat-grid { gap: var(--sp-2); }
+  .fab { right: var(--sp-4); }
+}
+
+/* Large phones / small tablets */
+@media (min-width: 480px) {
+  .welcome__rings { width: 210px; height: 210px; }
+  .stat-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* Tablet and up: introduce breathing room, cap width already handled by #app */
+@media (min-width: 640px) {
+  #app { max-width: 620px; }
+  .topbar { padding-left: var(--sp-8); padding-right: var(--sp-8); }
+  .view { padding-left: var(--sp-8); padding-right: var(--sp-8); }
+  .card { padding: var(--sp-6); }
+}
+
+/* Desktop: app rendered as a centered "device" card for a premium feel */
+@media (min-width: 900px) {
+  body {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: var(--sp-10) 0;
+  }
+  body::before { position: fixed; }
+  #app {
+    min-height: 860px;
+    max-height: 900px;
+    border-radius: var(--r-xl);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-lg);
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .fab { right: calc(50vw - 310px + 20px); }
+}
+
+@media (min-width: 900px) and (max-height: 920px) {
+  #app { min-height: 76vh; max-height: 90vh; }
+}
