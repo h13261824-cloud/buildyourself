@@ -3,12 +3,6 @@
    Per-challenge AI coach. Each challenge keeps its own chat history and its
    own "context" — the assistant is only ever handed the currently open
    challenge's data, never the full app, so nothing leaks between projects.
-
-   NOTE: this runs entirely on-device using the challenge's own data. It is
-   not connected to an external model — replace `respond()` with a real API
-   call later (see the Firebase/API-ready notes in storage.js) if you want
-   a live LLM behind it; the context object below is already shaped for
-   that hand-off.
    ========================================================================== */
 
 const Chat = (() => {
@@ -54,9 +48,15 @@ const Chat = (() => {
     return Storage.pushChat(challengeId, { role: "ai", text: greeting, ts: Date.now() });
   }
 
+  // Changed back to synchronous so it works perfectly with your existing ui.js
   function send(challengeId, userText) {
+    // 1. Save user message
     Storage.pushChat(challengeId, { role: "user", text: userText, ts: Date.now() });
+    
+    // 2. Generate reply immediately
     const reply = respond(challengeId, userText);
+    
+    // 3. Save AI reply and return it so ui.js can render it instantly
     return Storage.pushChat(challengeId, { role: "ai", text: reply, ts: Date.now() });
   }
 
@@ -65,13 +65,14 @@ const Chat = (() => {
     if (!ctx) return "I couldn't find this challenge's data.";
     const t = text.toLowerCase();
 
-    if (/today|now|next task/.test(t)) return todayAdvice(ctx);
-    if (/behind|schedule|late|pace/.test(t)) return paceAdvice(ctx);
+    if (/today|now|next task|do today/.test(t)) return todayAdvice(ctx);
+    if (/behind|schedule|late|pace|slow/.test(t)) return paceAdvice(ctx);
     if (/earn faster|earn more|money|income/.test(t)) return earnAdvice(ctx);
-    if (/review|how am i doing|progress/.test(t)) return reviewAdvice(ctx);
+    if (/review|how am i doing|progress|status/.test(t)) return reviewAdvice(ctx);
     if (/next challenge|generate|new challenge|suggest.*challenge/.test(t)) return nextChallengeAdvice(ctx);
     if (/motivat|tired|give up|hard|struggl/.test(t)) return motivation(ctx);
-    if (/mistake|wrong|fail/.test(t)) return mistakeAdvice(ctx);
+    if (/mistake|wrong|fail|missed/.test(t)) return mistakeAdvice(ctx);
+    if (/hello|hi|hey|coach/.test(t)) return `Hello! I'm here to help you crush your "${ctx.name}" challenge. What's on your mind?`;
 
     return generic(ctx, text);
   }
@@ -79,7 +80,7 @@ const Chat = (() => {
   function todayAdvice(ctx) {
     if (!ctx.todayTask) return `Day ${ctx.currentDay} isn't in your plan — this challenge may already be finished. Open the report to see how it went.`;
     if (ctx.todayTask.status !== "pending") return `Day ${ctx.currentDay} is already recorded as ${ctx.todayTask.status}. Nothing left to do today — come back tomorrow.`;
-    return `Today is Day ${ctx.currentDay}: "${ctx.todayTask.title || "your planned task"}". ${ctx.todayTask.description ? ctx.todayTask.description + " " : ""}Mark it done as soon as you finish it — momentum compounds faster than the task itself.`;
+    return `Today is Day ${ctx.currentDay}: "${ctx.todayTask.title || "your planned task"}". ${ctx.todayTask.description ? ctx.todayTask.description + " " : ""}Mark it done as soon as you finish it.`;
   }
 
   function paceAdvice(ctx) {
@@ -87,8 +88,8 @@ const Chat = (() => {
     const expected = ctx.currentDay - 1;
     const actual = done + failed;
     if (actual >= expected && failed === 0) return `You're right on pace — ${done} of ${expected} expected days are done cleanly. Keep the streak alive.`;
-    if (failed > 0) return `You've completed ${done} and missed ${failed} of ${expected} expected days. You're not out of it — the goal is to keep today's day clean, not to fix the past.`;
-    return `You're at day ${ctx.currentDay} of ${ctx.duration}, ${ctx.missionProgress}% through the plan. That's a normal spot to be — focus only on today's task.`;
+    if (failed > 0) return `You've completed ${done} and missed ${failed} of ${expected} expected days. You're not out of it — keep today's day clean.`;
+    return `You're at day ${ctx.currentDay} of ${ctx.duration}, ${ctx.missionProgress}% through the plan. That's a normal spot to be.`;
   }
 
   function earnAdvice(ctx) {
@@ -98,33 +99,43 @@ const Chat = (() => {
     const top = Object.entries(bySource).sort((a, b) => b[1] - a[1])[0];
     let out = `You've earned ${Utils.formatMoney(ctx.currentEarn)} so far`;
     out += ctx.targetEarn ? `, ${Utils.formatMoney(gap)} short of your ${Utils.formatMoney(ctx.targetEarn)} target. ` : ". ";
-    if (top) out += `Your strongest source is ${top[0]} (${Utils.formatMoney(top[1])}) — doubling down there is usually faster than starting a new channel.`;
-    else out += "No income logged yet — even small amounts recorded daily build a much clearer picture than one big number at the end.";
+    if (top) out += `Your strongest source is ${top[0]} (${Utils.formatMoney(top[1])}).`;
+    else out += "No income logged yet.";
     return out;
   }
 
   function reviewAdvice(ctx) {
-    return `Day ${ctx.currentDay} of ${ctx.duration}. Progress: ${ctx.missionProgress}%. Completed: ${ctx.completedTasks.length}, Missed: ${ctx.failedTasks.length}, Remaining: ${ctx.remainingTasks.length}. Earnings: ${Utils.formatMoney(ctx.currentEarn)}${ctx.targetEarn ? ` of ${Utils.formatMoney(ctx.targetEarn)} target` : ""}. `
-      + (ctx.failedTasks.length === 0 ? "Clean run so far — no missed days." : `You've missed ${ctx.failedTasks.length} day(s) — worth a quick look at what got in the way.`);
+    return `Day ${ctx.currentDay} of ${ctx.duration}. Progress: ${ctx.missionProgress}%. Completed: ${ctx.completedTasks.length}, Missed: ${ctx.failedTasks.length}. Earnings: ${Utils.formatMoney(ctx.currentEarn)}. `
+      + (ctx.failedTasks.length === 0 ? "Clean run so far." : `You've missed ${ctx.failedTasks.length} day(s).`);
   }
 
   function nextChallengeAdvice(ctx) {
     const harder = ctx.missionProgress >= 80;
     const nextDays = harder ? Math.min(ctx.duration * 2, 30) : ctx.duration;
-    return `Based on how "${ctx.name}" went, I'd suggest a ${nextDays}-day challenge next${harder ? ", stepping up since this one is going well" : ", keeping the same length until consistency is rock solid"}. Give it a clear, single-outcome name and a daily task small enough to do even on a bad day.`;
+    return `Based on how "${ctx.name}" went, I'd suggest a ${nextDays}-day challenge next. Give it a clear name and a small daily task.`;
   }
 
   function motivation(ctx) {
-    return `${ctx.completedTasks.length} day(s) are already banked — that's proof, not luck. The only job today is one task, not the whole ${ctx.duration}-day plan. Do today's, and tomorrow takes care of itself.`;
+    return `${ctx.completedTasks.length} day(s) are already banked — that's proof, not luck. Do today's task, and tomorrow takes care of itself.`;
   }
 
   function mistakeAdvice(ctx) {
-    if (!ctx.failedTasks.length) return "No missed days yet on this challenge — nothing to flag. Keep the plan realistic and today should go the same way.";
-    return `Days ${ctx.failedTasks.join(", ")} were missed. Look for a pattern — same time of day, same trigger — rather than treating each as unrelated. Fixing the pattern fixes every future day at once.`;
+    if (!ctx.failedTasks.length) return "No missed days yet on this challenge — nothing to flag.";
+    return `Days ${ctx.failedTasks.join(", ")} were missed. Look for a pattern and try to avoid it today.`;
   }
 
   function generic(ctx, text) {
-    return `On "${ctx.name}": you're ${ctx.missionProgress}% through, day ${ctx.currentDay} of ${ctx.duration}, with ${Utils.formatMoney(ctx.currentEarn)} earned. Ask me things like "what should I do today" or "review my challenge" and I'll answer using this challenge's own data only.`;
+    // Adding variations so it doesn't give the same reply to random messages
+    const fallbacks = [
+      `On "${ctx.name}": you're ${ctx.missionProgress}% through, day ${ctx.currentDay} of ${ctx.duration}. Ask me things like "what should I do today".`,
+      `I'm currently tracking your data. You've earned ${Utils.formatMoney(ctx.currentEarn)} so far. What's the plan for today?`,
+      `Keep your focus on finishing day ${ctx.currentDay} strong. Need a quick progress review?`,
+      `I hear you. You have ${ctx.remainingTasks.length} tasks remaining in this challenge. Let's finish them!`,
+      `Got it. I'm here to analyze your stats. If you want a full breakdown, just ask to "review my progress".`
+    ];
+    // This will pick a pseudo-random reply based on the length of the user's text
+    const idx = text.length % fallbacks.length;
+    return fallbacks[idx];
   }
 
   return { SUGGESTIONS, buildContext, history, seedIfEmpty, send };
