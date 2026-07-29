@@ -584,12 +584,16 @@
   // ======================================================================
   // AI CHAT
   // ======================================================================
+  let isAiTyping = false; // মেসেজ স্প্যামিং ব্লক করার জন্য
+
   function renderChat(params) {
     const challenge = Storage.getChallenge(params.id);
     if (!challenge) { Router.navigate("/home"); return; }
     Utils.qs("#chat-title").innerHTML = `<span class="eyebrow">AI Coach · isolated memory</span>${Utils.escapeHTML(challenge.name)}`;
     Chat.seedIfEmpty(challenge.id);
-    paintChatHistory(challenge.id);
+    
+    isAiTyping = false; 
+    paintChatHistory(challenge.id, false);
 
     Utils.qs("#chat-suggestions").innerHTML = Chat.SUGGESTIONS.map(q => `<div class="suggest-chip" data-q="${Utils.escapeHTML(q)}">${q}</div>`).join("");
     Utils.qs("#chat-suggestions").onclick = (e) => {
@@ -599,38 +603,54 @@
 
     const input = Utils.qs("#chat-input");
     const sendBtn = Utils.qs("#chat-send");
-    input.oninput = () => { sendBtn.disabled = !input.value.trim(); };
+    input.oninput = () => { sendBtn.disabled = !input.value.trim() || isAiTyping; };
     sendBtn.disabled = true;
-    sendBtn.onclick = () => { if (input.value.trim()) sendChatMessage(challenge.id, input.value.trim()); };
-    input.onkeydown = (e) => { if (e.key === "Enter" && input.value.trim()) sendChatMessage(challenge.id, input.value.trim()); };
+    sendBtn.onclick = () => { if (input.value.trim() && !isAiTyping) sendChatMessage(challenge.id, input.value.trim()); };
+    input.onkeydown = (e) => { if (e.key === "Enter" && input.value.trim() && !isAiTyping) sendChatMessage(challenge.id, input.value.trim()); };
   }
 
-  function paintChatHistory(challengeId) {
+  function paintChatHistory(challengeId, showTyping = false) {
     const msgs = Chat.history(challengeId);
-    Utils.qs("#chat-window").innerHTML = msgs.map(m => `<div class="msg ${m.role === "ai" ? "msg-ai" : "msg-user"}">${Utils.escapeHTML(m.text)}</div>`).join("");
-    Utils.qs("#view-chat").scrollTop = Utils.qs("#view-chat").scrollHeight;
+    let html = msgs.map(m => `<div class="msg ${m.role === "ai" ? "msg-ai" : "msg-user"}">${Utils.escapeHTML(m.text)}</div>`).join("");
+    
+    // ডাইনামিক ভাবে টাইপিং ইন্ডিকেটর জেনারেট করা হচ্ছে, যাতে ডিলিট না হয়
+    if (showTyping) {
+      html += `<div class="msg msg-ai msg-typing"><span></span><span></span><span></span></div>`;
+    }
+
+    const windowEl = Utils.qs("#chat-window");
+    windowEl.innerHTML = html;
+    
+    // সঠিক এলিমেন্টকে স্ক্রল করানো হচ্ছে
+    windowEl.scrollTop = windowEl.scrollHeight;
   }
 
   function sendChatMessage(challengeId, text) {
+    if (isAiTyping) return;
+    isAiTyping = true; // AI রিপ্লাই দেওয়ার আগ পর্যন্ত নতুন ইনপুট ব্লক করা হলো
+
     Storage.pushChat(challengeId, { role: "user", text, ts: Date.now() });
-    paintChatHistory(challengeId);
-    Utils.qs("#chat-input").value = "";
-    Utils.qs("#chat-send").disabled = true;
-    const typing = Utils.qs("#chat-typing");
-    typing.style.display = "block";
-    Utils.qs("#chat-window").appendChild(typing);
+    
+    const input = Utils.qs("#chat-input");
+    const sendBtn = Utils.qs("#chat-send");
+    input.value = "";
+    sendBtn.disabled = true;
+    
+    paintChatHistory(challengeId, true); // টাইপিং এনিমেশন দেখানো শুরু
+
     setTimeout(() => {
-      typing.style.display = "none";
       computeReply(challengeId, text);
-      paintChatHistory(challengeId);
+      isAiTyping = false;
+      paintChatHistory(challengeId, false); // টাইপিং এনিমেশন মুছে রিপ্লাই দেখানো
+      
+      // রিপ্লাই আসার পর যদি ইনপুট বক্সে কিছু থাকে, তবে সেন্ড বাটন আবার চালু করা
+      if (input && input.value.trim()) {
+        sendBtn.disabled = false;
+      }
     }, 650 + Math.random() * 500);
   }
 
-  // Chat module keeps respond() private; re-derive via its send() but we already pushed
-  // the user message above for animation control, so call the internal logic directly.
   function computeReply(challengeId, text) {
-    // Fallback path: Chat.send() both pushes user + ai; since we already pushed user,
-    // pop it back off before delegating to avoid duplication.
     const msgs = Storage.getChat(challengeId);
     msgs.pop();
     Storage.setChat(challengeId, msgs);
