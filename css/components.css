@@ -246,8 +246,30 @@
 .searchbar input { flex: 1; background: none; border: none; color: var(--text-primary); font-size: var(--fs-base); }
 .searchbar input:focus { outline: none; }
 
-/* Chat */
-.chat-window { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-2) 0 var(--sp-4); }
+/* ==========================================================================
+   Chat / AI Coach Updates (Scroll & Flex Fixes)
+   ========================================================================== */
+
+/* Make sure the chat view acts as a full-height flex container when active */
+#view-chat.is-active { 
+  display: flex !important; 
+  flex-direction: column; 
+  height: 100vh; 
+  height: 100dvh; 
+  overflow: hidden; 
+}
+
+/* Updated .chat-window to scroll automatically */
+.chat-window { 
+  display: flex; 
+  flex-direction: column; 
+  gap: var(--sp-4); 
+  padding: var(--sp-2) 0 var(--sp-4); 
+  flex: 1; 
+  overflow-y: auto; 
+  scroll-behavior: smooth; 
+}
+
 .msg { max-width: 84%; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); font-size: var(--fs-sm); line-height: var(--lh-normal); }
 .msg-ai { align-self: flex-start; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-bottom-left-radius: var(--r-sm); }
 .msg-user { align-self: flex-end; background: linear-gradient(155deg, #9D93FF, #7A6BF0); color: #0A0B10; font-weight: 550; border-bottom-right-radius: var(--r-sm); }
